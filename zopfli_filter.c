@@ -9,14 +9,11 @@
 #include "zlib.h"
 
 #define PUSH_ERR(func, minor, str)  H5Epush1(__FILE__, func, __LINE__, H5E_PLINE, minor, str)
-#define H5PY_GET_FILTER(a,b,c,d,e,f,g) H5Pget_filter_by_id2(a,b,c,d,e,f,g,NULL)
 
-/* Local function prototypes */
 static size_t zopfli_filter(unsigned flags, size_t cd_nelmts,
         const unsigned cd_values[], size_t nbytes, size_t *buf_size, void **buf);
 
 int register_zopfli(void){
-
     int retval;
 
     H5Z_class2_t filter_class = {
@@ -56,12 +53,10 @@ zopfli_filter(unsigned flags, size_t cd_nelmts,
     if(!(flags & H5Z_FLAG_REVERSE)){
         Options options;
         InitOptions(&options);
-        options.numiterations = 5;
-        options.verbose = 1;
+        options.numiterations = 15;
+        /* options.verbose = 1; */
 
         unsigned char bp = 0;
-        /* Deflate(&options, 2, 1 ,*buf, nbytes, &bp, &out, &outsize); */ 
-        /* GzipCompress(&options, *buf, nbytes, &out, &outsize); */
         ZlibCompress(&options, *buf, nbytes, &out, &outsize);
         status = outsize;
     }else{

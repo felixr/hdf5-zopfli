@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS+=-fPIC
+CFLAGS+=-fPIC -O2
 ZOPFLI_SRC=zopfli/blocksplitter.c \
 		   zopfli/cache.c \
 		   zopfli/deflate.c \
@@ -25,7 +25,7 @@ libzopfli_filter.so: zopfli_filter.c $(ZOPFLI_OBJ)
 clean:
 	rm -f $(ZOPFLI_OBJ)
 	rm -f example
-	rm -f *.o
+	rm -f *.o *.so
 	rm -f test_zopfli.hdf5 
 
 .PHONY: clean

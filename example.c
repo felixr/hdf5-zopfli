@@ -1,151 +1,194 @@
-/*
-    Copyright (C) 2009 Andrew Collette
-    http://h5py.alfven.org
-    License: BSD (see LICENSE.txt)
-
-    Example program demonstrating use of the zopfli filter from C code.
-
-    To compile this program:
-
-    h5cc -DH5_USE_16_API zopfli/*.c zopfli_filter.c example.c -o example
-
-    To run:
-
-    $ ./example
-    Success!
-    $ h5ls -v test_zopfli.hdf5 
-    Opened "test_zopfli.hdf5" with sec2 driver.
-    dset                     Dataset {100/100, 100/100, 100/100}
-        Location:  0:1:0:976
-        Links:     1
-        Modified:  2009-02-15 16:35:11 PST
-        Chunks:    {1, 100, 100} 40000 bytes
-        Storage:   4000000 logical bytes, 174288 allocated bytes, 2295.05% utilization
-        Filter-0:  shuffle-2 OPT {4}
-        Filter-1:  zopfli-32000 OPT {1, 261, 40000}
-        Type:      native float
-*/
-
 #include "hdf5.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <sys/stat.h>
+
 #include "zopfli_filter.h"
 
-#define SIZE 10*100*100
-#define SHAPE {10,100,100}
-#define CHUNKSHAPE {1,100,100}
+#define DATASET_NAME   "DS1"
 
 
-#define FILENAME        "test_zopfli.hdf5"
-#define DATASET         "dset"
+#define DIM 3
+#define DIM0 10 
+#define DIM1 100 
+#define DIM2 100 
 
 
-int main(){
+#define SIZE (DIM0 * DIM1 * DIM2)
+#define SHAPE {DIM0, DIM1, DIM2}
+#define CHUNK_SHAPE {1, DIM1, DIM2}
 
-    static float data[SIZE];
-    static float data_out[SIZE];
-    const hsize_t shape[] = SHAPE;
-    const hsize_t chunkshape[] = CHUNKSHAPE;
-    int r, i;
-    int return_code = 1;
+void print_filter_name(hid_t dcpl);
+void create_and_test_file(hid_t dcpl, const char *file_name);
+bool check_for_gzip();
+int get_file_size(const char *file_name);
 
-    hid_t fid, sid, dset, plist = 0;
-
-    for(i=0; i<SIZE; i++){
-        data[i] = i;
-    }
+int main() {
+    hid_t dcpl;
+    herr_t status;
+    hsize_t chunk_shape[] = CHUNK_SHAPE;
 
     /* Register the filter with the library */
-    r = register_zopfli();
-    if(r<0) goto failed;
+    status = register_zopfli();
 
-#if 1
-    sid = H5Screate_simple(3, shape, NULL);
-    if(sid<0) goto failed;
+    /* dclp = dataset creation property list */
 
-    fid = H5Fcreate(FILENAME, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
-    if(fid<0) goto failed;
+    /* GZIP COMPRESSION */
+    dcpl = H5Pcreate(H5P_DATASET_CREATE);
+    status = H5Pset_chunk(dcpl, DIM, chunk_shape);
+    status = H5Pset_shuffle(dcpl);
+    status = H5Pset_deflate(dcpl, 9);
+    create_and_test_file(dcpl, "test_gzip.hdf5");
 
-    plist = H5Pcreate(H5P_DATASET_CREATE);
-    if(plist<0) goto failed;
+    /* ZOPFLI COMPRESSION */
+    dcpl = H5Pcreate(H5P_DATASET_CREATE);
+    status = H5Pset_chunk(dcpl, DIM,  chunk_shape);
+    status = H5Pset_shuffle(dcpl);
+    status = H5Pset_filter(dcpl, H5_FILTER_ZOPFLI, H5Z_FLAG_OPTIONAL, 0, NULL);
+    create_and_test_file(dcpl, "test_zopfli.hdf5");
 
-    /* Chunked layout required for filters */
-    r = H5Pset_chunk(plist, 3, chunkshape);
-    if(r<0) goto failed;
+    int size_gzip = get_file_size("test_gzip.hdf5"); 
+    int size_zopfli = get_file_size("test_zopfli.hdf5");
 
-    /* Use of the shuffle filter VASTLY improves performance of this
-       and other block-oriented compression filters.  Be sure to add
-       this before the compression filter!
-    */
-    r = H5Pset_shuffle(plist);
-    if(r<0) goto failed;
+    printf("GZIP file size: %d\n", size_gzip);
+    printf("Zopfli file size: %d\n",  size_zopfli);
 
-    /* Note the "optional" flag is necessary, as with the DEFLATE filter */
-    r = H5Pset_filter(plist, H5_FILTER_ZOPFLI, H5Z_FLAG_OPTIONAL, 0, NULL);
-    /* r = H5Pset_filter(plist,H5Z_FILTER_DEFLATE, H5Z_FLAG_OPTIONAL, 0, NULL); */
-    if(r<0) goto failed;
-
-    dset = H5Dcreate(fid, DATASET, H5T_NATIVE_FLOAT, sid, plist);
-    if(dset<0) goto failed;
-    
-    r = H5Dwrite(dset, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, &data);
-    if(r<0) goto failed;
-
-   /*
-     * Close and release resources.
-     */
-    H5Pclose (plist);
-    H5Dclose (dset);
-    H5Sclose (sid);
-    sid =  0;
-    H5Fclose (fid);
-#endif
-
-
-    /*
-     * Now we begin the read section of this example.
-     */
-
-    /*
-     * Open file and dataset using the default properties.
-     */
-    fid = H5Fopen (FILENAME, H5F_ACC_RDONLY, H5P_DEFAULT);
-    dset = H5Dopen (fid, DATASET);
-
-    /*
-     * Retrieve dataset creation property list.
-     */
-     plist = H5Dget_create_plist (dset);
-
-    /*
-     * Retrieve and print the filter type.  Here we only retrieve the
-     * first filter because we know that we only added one filter.
-     */
-    H5Z_filter_t    filter_type;
-    unsigned int filter_info, flags ;
-    size_t   nelmts = 0;
-
-// H5Z_filter_t H5Pget_filter( hid_t plist_id, unsigned idx, unsigned int *flags, size_t *cd_nelmts, unsigned cd_values[], size_t namelen, char name[], unsigned *filter_config )
-    filter_type = H5Pget_filter2(plist, 1, &flags, &nelmts, NULL, 0, NULL, &filter_info);
-    printf ("Filter type is: %d\n ", filter_type);
-    r = H5Dread(dset, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, &data_out);
-    if(r<0) goto failed;
-
-    for(i=0;i<SIZE;i++){
-        if(data[i] != data_out[i]) goto failed;
-    }
-
-
-    fprintf(stdout, "Success!\n");
-
-    return_code = 0;
-
-    failed:
-
-    if (dset>0)  H5Dclose(dset);
-    if (sid>0)   H5Sclose(sid);
-    if (plist>0) H5Pclose(plist);
-    if (fid>0)   H5Fclose(fid);
-
-    return return_code;
+    printf("Zopfli/GZIP: %0.4f\n",  (float)size_zopfli/(float)size_gzip);
 }
 
+void create_and_test_file(hid_t dcpl, const char *file_name) {
+    hid_t           file, space, dset;    /* Handles */
+    herr_t          status;
+    htri_t          avail;
+    H5Z_filter_t    filter_type;
+    unsigned int    filter_info;
+    hsize_t         dset_shape[] = SHAPE;
+    float wdata[SIZE],   rdata[SIZE];
+    int i;
+
+    /* Initialize data.  */
+    for (i=0; i<SIZE; i++) {
+        wdata[i] = (float)i ;
+    }
+
+    /* Create a new file using the default properties.  */
+    file = H5Fcreate(file_name, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+
+    /*
+     * Create dataspace.  Setting maximum size to NULL sets the maximum
+     * size to be the current size.
+     */
+    space = H5Screate_simple(DIM, dset_shape, NULL); 
+
+    /* Create the dataset. */
+    dset = H5Dcreate(file, DATASET_NAME, H5T_NATIVE_FLOAT, space, dcpl);
+
+    /* Write the data to the dataset.  */
+    status = H5Dwrite (dset, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, &wdata);
+
+    /* Close and release resources.  */
+    status = H5Pclose (dcpl);
+    status = H5Dclose (dset);
+    status = H5Sclose (space);
+    status = H5Fclose (file);
+
+
+    /* Open file and dataset using the default properties.  */
+    file = H5Fopen(file_name, H5F_ACC_RDONLY, H5P_DEFAULT);
+    dset = H5Dopen(file, DATASET_NAME);
+
+    /* Retrieve dataset creation property list.  */
+    dcpl = H5Dget_create_plist(dset);
+
+    print_filter_name(dcpl);
+
+    /* Read the data using the default properties. */
+    status = H5Dread(dset, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, &rdata);
+
+    /*
+     * Find the maximum value in the dataset, to verify that it was
+     * read correctly.
+     */
+    bool data_correct = true;
+    for (i=0; i<SIZE; i++) {
+        if ( rdata[i] != wdata[i] ) { 
+        /* if ( abs(rdata[i] - wdata[i]) > 0.0001) { */
+            printf("data mismatch %d %f %f\n", i,  rdata[i], wdata[i]);
+            data_correct = false;
+            break;
+        }
+    }
+
+    printf("Data in file matches written data: %s\n", (data_correct == true ? "YES" : "NO"));
+
+
+    /* Close and release resources. */
+    status = H5Pclose (dcpl);
+    status = H5Dclose (dset);
+    status = H5Fclose (file);
+}
+
+bool check_for_gzip() {
+    H5Z_filter_t    filter_type;
+    unsigned int    filter_info;
+    herr_t status;
+    htri_t avail;
+    avail = H5Zfilter_avail(H5Z_FILTER_DEFLATE);
+    if (!avail) {
+        printf ("gzip filter not available.\n");
+        return false;
+    }
+    status = H5Zget_filter_info (H5Z_FILTER_DEFLATE, &filter_info);
+    if ( !(filter_info & H5Z_FILTER_CONFIG_ENCODE_ENABLED) ||
+            !(filter_info & H5Z_FILTER_CONFIG_DECODE_ENABLED) ) {
+        printf ("gzip filter not available for encoding and decoding.\n");
+        return false;
+    }
+    return true;
+}
+
+
+/*
+ * Retrieve and print the filter type. 
+ */
+void print_filter_name(hid_t dcpl) {
+    size_t          nelmts;
+    H5Z_filter_t    filter_type;
+    unsigned int    flags, filter_info;
+
+    nelmts = 0;
+    /* retrieve second filter; the first one is SHUFFLE the second the compression */
+    filter_type = H5Pget_filter2(dcpl, 1, &flags, &nelmts, NULL, 0, NULL, &filter_info);
+    printf ("Filter type is: ");
+    switch (filter_type) {
+    case H5_FILTER_ZOPFLI:
+        printf ("H5_FILTER_ZOPFLI\n");
+        break;
+    case H5Z_FILTER_DEFLATE:
+        printf ("H5Z_FILTER_DEFLATE\n");
+        break;
+    case H5Z_FILTER_SHUFFLE:
+        printf ("H5Z_FILTER_SHUFFLE\n");
+        break;
+    case H5Z_FILTER_FLETCHER32:
+        printf ("H5Z_FILTER_FLETCHER32\n");
+        break;
+    case H5Z_FILTER_SZIP:
+        printf ("H5Z_FILTER_SZIP\n");
+        break;
+    case H5Z_FILTER_NBIT:
+        printf ("H5Z_FILTER_NBIT\n");
+        break;
+    case H5Z_FILTER_SCALEOFFSET:
+        printf ("H5Z_FILTER_SCALEOFFSET\n");
+    }
+}
+
+int get_file_size(const char *file_name) {
+    struct stat file_status;
+    if (stat(file_name, &file_status) != 0){
+        return 0;
+    }
+    return file_status.st_size;
+}
