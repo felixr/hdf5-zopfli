@@ -1,3 +1,5 @@
+CC=gcc
+CFLAGS+=-fPIC
 ZOPFLI_SRC=zopfli/blocksplitter.c \
 		   zopfli/cache.c \
 		   zopfli/deflate.c \
@@ -12,14 +14,18 @@ ZOPFLI_SRC=zopfli/blocksplitter.c \
 
 ZOPFLI_OBJ=$(patsubst %.c,%.o,$(ZOPFLI_SRC))
 
+all: example libzopfli_filter.so
+
 example: example.c zopfli_filter.c $(ZOPFLI_OBJ)
-	gcc -g zopfli_filter.c example.c $(ZOPFLI_OBJ) -o example -lhdf5 -lz
+	$(CC) $(CFLAGS) zopfli_filter.c example.c $(ZOPFLI_SRC) -o example -lhdf5 -lz
 
-zopfli_filter.o: zopfli_filter.c  zopfli_filter.h 
-	gcc -c $< 
+libzopfli_filter.so: zopfli_filter.c $(ZOPFLI_OBJ)
+	$(CC) $(CFLAGS) $(ZOPFLI_OBJ) zopfli_filter.c -shared -o $@ 
 
+clean:
+	rm -f $(ZOPFLI_OBJ)
+	rm -f example
+	rm -f *.o
+	rm -f test_zopfli.hdf5 
 
-libzopfli_filter.so: zopfli_filter.c 
-	# gcc -I. -O2 -lhdf5 -fPIC -shared ../zopfli-git/*.o zopfli_filter.c -o $@ 
-	# example: example.c zopfli_filter.c zopfli_filter.h 
-
+.PHONY: clean
