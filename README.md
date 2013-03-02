@@ -7,9 +7,7 @@ Zopfli is a zlib compatible compression algorithm. It is much slower than zlib, 
 
 In the included example the Zopfli filter yields a 9% smaller HDF5 file than the GZIP filter. 
 
-TODO
------
- * allow setting options (numiterations)
+Note: this filter is not ready for production use 
 
 Links
 ------

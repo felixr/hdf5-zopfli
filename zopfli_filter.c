@@ -11,9 +11,9 @@
 #define PUSH_ERR(func, minor, str)  H5Epush1(__FILE__, func, __LINE__, H5E_PLINE, minor, str)
 
 static size_t zopfli_filter(unsigned flags, size_t cd_nelmts,
-        const unsigned cd_values[], size_t nbytes, size_t *buf_size, void **buf);
+                            const unsigned cd_values[], size_t nbytes, size_t *buf_size, void **buf);
 
-int register_zopfli(void){
+int register_zopfli(void) {
     int retval;
 
     H5Z_class2_t filter_class = {
@@ -28,7 +28,7 @@ int register_zopfli(void){
     };
 
     retval = H5Zregister(&filter_class);
-    if(retval<0){
+    if(retval<0) {
         PUSH_ERR("register_zopfli", H5E_CANTREGISTER, "Can't register Zopfli filter");
     }
     return retval;
@@ -37,29 +37,39 @@ int register_zopfli(void){
 #define H5Z_DEFLATE_SIZE_ADJUST(s) (HDceil(((double)(s))*1.001)+12)
 
 
-    static size_t
+static size_t
 zopfli_filter(unsigned flags, size_t cd_nelmts,
-        const unsigned cd_values[], size_t nbytes,
-        size_t *buf_size, void **buf)
-{
+              const unsigned cd_values[], size_t nbytes,
+              size_t *buf_size, void **buf) {
     /* void	*outbuf = NULL;         /1* Pointer to new buffer *1/ */
     unsigned char* out = NULL;
     size_t outsize = 0;
-    int		status; 
+    int		status;
     size_t	ret_value;              /* Return value */
 
 
     /* compress ? */
-    if(!(flags & H5Z_FLAG_REVERSE)){
+    if(!(flags & H5Z_FLAG_REVERSE)) {
         Options options;
         InitOptions(&options);
-        options.numiterations = 15;
-        /* options.verbose = 1; */
+
+        if (cd_nelmts > 0) {
+            /* printf("numiterations: %d\n", cd_values[0]); */
+            options.numiterations = cd_values[0];
+        }
+
+        if (cd_nelmts == 6) {
+            options.blocksplitting = cd_values[1];
+            options.blocksplittinglast = cd_values[2];
+            options.blocksplittingmax = cd_values[4];
+            options.verbose = cd_values[5];
+        }
+
 
         unsigned char bp = 0;
         ZlibCompress(&options, *buf, nbytes, &out, &outsize);
         status = outsize;
-    }else{
+    } else {
         /* Input; uncompress */
         z_stream	z_strm;                 /* zlib parameters */
         outsize = *buf_size;     /* Number of bytes for output (compressed) buffer */
@@ -68,7 +78,7 @@ zopfli_filter(unsigned flags, size_t cd_nelmts,
         out = (unsigned char *)malloc(outsize);
 
         /* Set the uncompression parameters */
-        memset(&z_strm, 0, sizeof(z_strm)); 
+        memset(&z_strm, 0, sizeof(z_strm));
         z_strm.next_in = (Bytef *)*buf;
         z_strm.avail_in = nbytes;
         z_strm.next_out = (Bytef *)out;
@@ -118,13 +128,13 @@ zopfli_filter(unsigned flags, size_t cd_nelmts,
         (void)inflateEnd(&z_strm);
     }
 
-    if(status != 0){
+    if(status != 0) {
         free(*buf);
         *buf = out;
         *buf_size = outsize;
 
         return status;  /* Size of compressed/decompressed data */
-    } 
+    }
 failed:
 
     free(out);

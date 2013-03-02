@@ -45,7 +45,9 @@ int main() {
     dcpl = H5Pcreate(H5P_DATASET_CREATE);
     status = H5Pset_chunk(dcpl, DIM,  chunk_shape);
     status = H5Pset_shuffle(dcpl);
-    status = H5Pset_filter(dcpl, H5_FILTER_ZOPFLI, H5Z_FLAG_OPTIONAL, 0, NULL);
+    unsigned options[] = {5}; 
+    status = H5Pset_filter(dcpl, H5_FILTER_ZOPFLI, H5Z_FLAG_OPTIONAL, 1,options);
+    timestamp = get_time();
     create_and_test_file(dcpl, "test_zopfli.hdf5");
 
     int size_gzip = get_file_size("test_gzip.hdf5"); 
