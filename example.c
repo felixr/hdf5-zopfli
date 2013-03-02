@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 
 #include "zopfli_filter.h"
 
@@ -23,11 +25,13 @@ void print_filter_name(hid_t dcpl);
 void create_and_test_file(hid_t dcpl, const char *file_name);
 bool check_for_gzip();
 int get_file_size(const char *file_name);
+double get_time();
 
 int main() {
     hid_t dcpl;
     herr_t status;
     hsize_t chunk_shape[] = CHUNK_SHAPE;
+    double timestamp;
 
     /* Register the filter with the library */
     status = register_zopfli();
@@ -39,7 +43,9 @@ int main() {
     status = H5Pset_chunk(dcpl, DIM, chunk_shape);
     status = H5Pset_shuffle(dcpl);
     status = H5Pset_deflate(dcpl, 9);
+    timestamp = get_time();
     create_and_test_file(dcpl, "test_gzip.hdf5");
+    printf("time spent: %f secs\n\n", get_time() - timestamp);
 
     /* ZOPFLI COMPRESSION */
     dcpl = H5Pcreate(H5P_DATASET_CREATE);
@@ -49,6 +55,7 @@ int main() {
     status = H5Pset_filter(dcpl, H5_FILTER_ZOPFLI, H5Z_FLAG_OPTIONAL, 1,options);
     timestamp = get_time();
     create_and_test_file(dcpl, "test_zopfli.hdf5");
+    printf("time spent: %f secs\n\n", get_time() - timestamp);
 
     int size_gzip = get_file_size("test_gzip.hdf5"); 
     int size_zopfli = get_file_size("test_zopfli.hdf5");
@@ -194,3 +201,11 @@ int get_file_size(const char *file_name) {
     }
     return file_status.st_size;
 }
+
+double get_time() {
+    struct timeval t;
+    struct timezone tzp;
+    gettimeofday(&t, &tzp);
+    return t.tv_sec + t.tv_usec*1e-6;
+}
+
